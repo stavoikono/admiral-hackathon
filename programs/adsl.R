@@ -19,10 +19,11 @@ ds <- read_xpt("sdtm/ds.xpt") %>% convert_blanks_to_na()
 sv <- read_xpt("sdtm/sv.xpt") %>% convert_blanks_to_na()
 qs <- read_xpt("sdtm/qs.xpt") %>% convert_blanks_to_na()
 mh <- read_xpt("sdtm/mh.xpt") %>% convert_blanks_to_na()
+sc <- read_xpt("sdtm/sc.xpt") %>% convert_blanks_to_na()
 
 #xportr_write(adsl, "adam/adsl.xpt")
 
-# Deriving ADSL ----
+# Custom functions ----
 
 trtn <- function(x){
   case_when(x=="Placebo" ~ 1,
@@ -31,9 +32,18 @@ trtn <- function(x){
             TRUE ~ as.numeric(NA))
 }
 
+comp_func <- function(x){
+  ifelse(!is.na(x),"Y","N")
+}
 
+format_eosstt <- function(DSDECOD) {
+  ifelse(DSDECOD=="COMPLETED","COMPLETED","DISCONTINUED")
+}
+
+# Deriving ADSL ----
 
 adsl <- dm %>%
+  filter(ARM!="Screen Failure") %>%
   select(-DOMAIN) %>%
   mutate(TRT01P = ARM,
          TRT01A = TRT01P,
@@ -56,19 +66,6 @@ adsl <- dm %>%
     new_vars = vars(VISIT1DT = SVSTDTC),
     filter_add = VISITNUM==1
   ) %>%
-  derive_vars_merged(
-    dataset_add = sv,
-    by_vars = vars(STUDYID, USUBJID),
-    new_vars = vars(TRTSDT = SVSTDTC),
-    filter_add = VISITNUM==3
-  ) %>%
-  # PLACE HOLDER FOR
-  # derive_vars_merged(
-  #   dataset_add = sv,
-  #   by_vars = vars(STUDYID, USUBJID),
-  #   new_vars = vars(TRTSDT = SVSTDTC),
-  #   filter_add = VISITNUM==3
-  # ) %>%
   mutate(ITTFL = ifelse(!is.na(ARMCD),"Y","N"),
          SAFFL = ifelse(ITTFL == "Y" & !is.na(TRTSDT),"Y","N")
   ) %>%
@@ -85,13 +82,13 @@ adsl <- adsl %>%
     analysis_var = QSORRES,
     summary_fun = function(x) sum(as.numeric(x), na.rm = TRUE),
     filter_add = QSCAT == "MINI-MENTAL STATE"
+  ) %>%
+  derive_vars_merged(
+    dataset_add = sc,
+    by_vars = vars(STUDYID, USUBJID),
+    new_vars = vars(EDUCLVL = SCSTRESN),
+    filter_add = SCTESTCD=="EDLEVEL"
   )
-
-
-adsl <- adsl %>%
-  #derive_vars_dtm_to_dt(source_vars = vars(TRTSDTM, TRTEDTM)) %>%
-  derive_var_trtdurd()
-
 
 
 
@@ -118,13 +115,11 @@ adsl <- adsl %>%
 
 # VS -- NEED TO BE FIXED
 
-vs_8 <- vs %>% filter(VISITNUM==8) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC8 = VSDTC)
-vs_10 <- vs %>% filter(VISITNUM==10) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC10 = VSDTC)
-vs_12 <- vs %>% filter(VISITNUM==12) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC12 = VSDTC)
+# vs_8 <- vs %>% filter(VISITNUM==8) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC8 = VSDTC)
+# vs_10 <- vs %>% filter(VISITNUM==10) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC10 = VSDTC)
+# vs_12 <- vs %>% filter(VISITNUM==12) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC12 = VSDTC)
 
-comp_func <- function(VSDTC){
-  ifelse(!is.na(VSDTC),"Y","N")
-}
+
 
 adsl <- adsl %>%
   derive_var_merged_cat(
@@ -154,9 +149,7 @@ adsl <- adsl %>%
 
 
 
-format_eosstt <- function(DSDECOD) {
-  ifelse(DSDECOD=="COMPLETED","COMPLETED","DISCONTINUED")
-}
+
 
 adsl2 <- adsl %>%
   derive_vars_disposition_reason(
@@ -185,9 +178,62 @@ adsl2 <- adsl %>%
     by_vars = vars(USUBJID),
     new_vars = vars(DISONSDT = MHSTDTC),
     filter_add = MHCAT == "PRIMARY DIAGNOSIS"
+  ) %>%
+  mutate(VISIT1DT = as.Date(VISIT1DT),
+         DISONSDT = as.Date(DISONSDT)) %>%
+  derive_vars_duration(
+    new_var = DURDIS,
+    out_unit = "months",
+    start_date = VISIT1DT,
+    end_date = DISONSDT
+  ) %>%
+  derive_vars_merged(
+    dataset_add = ds,
+    by_vars = vars(USUBJID),
+    new_vars = vars(VISNUMEN=VISITNUM),
+    filter_add = DSTERM == "PROTOCOL COMPLETED"
   )
 
 
+ex_ext <- ex %>%
+  select(USUBJID,VISITNUM, EXENDTC) %>%
+  mutate(EXENDTC = as.Date(EXENDTC)) %>%
+  group_by(USUBJID) %>%
+  slice_max(VISITNUM) %>%
+  ungroup() %>%
+  left_join( adsl %>% select(USUBJID, RFENDT)) %>%
+  rowwise() %>%
+  mutate(EXENDTC = if_else(VISITNUM >=3 & is.na(EXENDTC),RFENDT,EXENDTC)) %>%
+  ungroup() %>%
+  select(USUBJID, TRTEDT = EXENDTC)
 
 
+adsl <- adsl %>%
+  left_join(ex_ext) %>%
+  derive_vars_merged(
+    dataset_add = sv,
+    by_vars = vars(STUDYID, USUBJID),
+    new_vars = vars(TRTSDT = SVSTDTC),
+    filter_add = VISITNUM==3
+  ) %>%
+  derive_var_trtdurd()
 
+
+efffl <-
+  qs %>%
+  filter(VISITNUM>3) %>%
+  group_by(USUBJID) %>%
+  summarise(adas = sum(QSCAT=="ALZHEIMER'S DISEASE ASSESSMENT SCALE"),
+            cibic = sum(QSCAT=="CLINICIAN'S INTERVIEW-BASED IMPRESSION OF CHANGE (CIBIC+)")) %>%
+  ungroup() %>%
+  filter(adas>0 & cibic>0) %>%
+  mutate(efffl_fl = "Y") %>%
+  select(USUBJID, efffl_fl)
+
+
+adsl <-
+  adsl %>%
+  left_join(efffl) %>%
+  mutate(efffl_fl = if_else(is.na(efffl_fl),"N","Y")) %>%
+  mutate(EFFFL = if_else(SAFFL=="Y" & efffl_fl=="Y","Y","N")) %>%
+  select(-efffl_fl)
