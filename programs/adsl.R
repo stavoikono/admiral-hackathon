@@ -6,7 +6,7 @@ ipak <- function(pkg){
   sapply(pkg, require, character.only = TRUE)
 }
 
-packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr")
+packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl")
 
 ipak(packages)
 
@@ -21,15 +21,13 @@ qs <- read_xpt("sdtm/qs.xpt") %>% convert_blanks_to_na()
 mh <- read_xpt("sdtm/mh.xpt") %>% convert_blanks_to_na()
 sc <- read_xpt("sdtm/sc.xpt") %>% convert_blanks_to_na()
 
-#xportr_write(adsl, "adam/adsl.xpt")
 
 # Custom functions ----
 
 trtn <- function(x){
-  case_when(x=="Placebo" ~ 1,
-            x=="Xanomeline Low Dose" ~ 2,
-            x=="Xanomeline High Dose" ~ 3,
-            TRUE ~ as.numeric(NA))
+  case_when(x=="Placebo" ~ 0,
+            x=="Xanomeline Low Dose" ~ 1,
+            x=="Xanomeline High Dose" ~ 2)
 }
 
 comp_func <- function(x){
@@ -59,20 +57,31 @@ adsl <- dm %>%
                            RACE=="BLACK OR AFRICAN AMERICAN" ~ 3,
                            RACE=="WHITE" ~ 6),
          TRT01AN = trtn(TRT01A),
-         TRT01PN = trtn(TRT01P)) %>%
-  derive_vars_merged(
-    dataset_add = sv,
-    by_vars = vars(STUDYID, USUBJID),
-    new_vars = vars(VISIT1DT = SVSTDTC),
-    filter_add = VISITNUM==1
+         TRT01PN = trtn(TRT01P)
   ) %>%
-  mutate(ITTFL = ifelse(!is.na(ARMCD),"Y","N"),
-         SAFFL = ifelse(ITTFL == "Y" & !is.na(TRTSDT),"Y","N")
+  derive_vars_merged(
+    dataset_add = vs,
+    by_vars = vars(STUDYID, USUBJID),
+    new_vars = vars(HEIGHTBL = VSSTRESN),
+    filter_add = VSTESTCD=="HEIGHT" & VISITNUM==1
+  ) %>%
+  derive_vars_merged(
+    dataset_add = vs,
+    by_vars = vars(STUDYID, USUBJID),
+    new_vars = vars(WEIGHTBL = VSSTRESN),
+    filter_add = VSTESTCD=="WEIGHT" & VISITNUM==3
+  ) %>%
+  mutate(BMIBL = compute_bmi(HEIGHTBL,WEIGHTBL),
+         BMIBLGR1 = case_when(BMIBL < 25 ~ "<25",
+                              BMIBL >=25 & BMIBL < 30 ~ "25-<30",
+                              BMIBL >=30 ~ ">=30")
   ) %>%
   derive_vars_dt(
     dtc = RFENDTC,
     new_vars_prefix = "RFEN"
   )
+
+
 
 adsl <- adsl %>%
   derive_var_merged_summary(
@@ -91,67 +100,50 @@ adsl <- adsl %>%
   )
 
 
+## Deriving completion flags ----
 
-adsl <- adsl %>%
-  derive_vars_merged(
-    dataset_add = vs,
-    by_vars = vars(STUDYID, USUBJID),
-    new_vars = vars(HEIGHTBL = VSSTRESN),
-    filter_add = VSTESTCD=="HEIGHT" & VISITNUM==1
-  ) %>%
-  derive_vars_merged(
-    dataset_add = vs,
-    by_vars = vars(STUDYID, USUBJID),
-    new_vars = vars(WEIGHTBL = VSSTRESN),
-    filter_add = VSTESTCD=="WEIGHT" & VISITNUM==3
-  ) %>%
-  mutate(BMIBL = compute_bmi(HEIGHTBL,WEIGHTBL),
-         BMIBLGR1 = case_when(BMIBL < 25 ~ "<25",
-                              BMIBL >=25 & BMIBL < 30 ~ "25-<30",
-                              BMIBL >=30 ~ ">=30"))
-
-
-
-
-# VS -- NEED TO BE FIXED
-
-# vs_8 <- vs %>% filter(VISITNUM==8) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC8 = VSDTC)
-# vs_10 <- vs %>% filter(VISITNUM==10) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC10 = VSDTC)
-# vs_12 <- vs %>% filter(VISITNUM==12) %>% distinct(USUBJID, VSDTC) %>% dplyr::rename(VSDTC12 = VSDTC)
-
+vs_comp <- vs %>%
+  left_join(adsl %>% select(USUBJID,RFENDT)) %>%
+  mutate(COMP8FL = if_else(VISITNUM==8 & VSDTC<=RFENDT,"Y","N"),
+         COMP16FL = if_else(VISITNUM==10 & VSDTC<=RFENDT,"Y","N"),
+         COMP24FL = if_else(VISITNUM==12 & VSDTC<=RFENDT,"Y","N")
+         ) %>%
+  distinct(USUBJID,COMP8FL,COMP16FL,COMP24FL,VISITNUM) %>%
+  filter(VISITNUM %in% c(8,10,12))
 
 
 adsl <- adsl %>%
-  derive_var_merged_cat(
-    dataset_add = vs,
+  left_join(vs_comp %>%
+              filter(VISITNUM==8) %>%
+              select(USUBJID,COMP8FL)
+            ) %>%
+  left_join(vs_comp %>%
+              filter(VISITNUM==10) %>%
+              select(USUBJID,COMP16FL)
+            ) %>%
+  left_join(vs_comp %>%
+              filter(VISITNUM==12) %>%
+              select(USUBJID,COMP24FL)
+            ) %>%
+  mutate(COMP8FL = if_else(is.na(COMP8FL),"N",COMP8FL),
+         COMP16FL = if_else(is.na(COMP16FL),"N",COMP16FL),
+         COMP24FL = if_else(is.na(COMP24FL),"N",COMP24FL))
+
+
+rm(vs_comp)
+
+
+
+
+
+
+adsl <- adsl %>%
+  derive_vars_merged(
+    dataset_add = sv,
     by_vars = vars(STUDYID, USUBJID),
-    new_var = COMP8FL,
-    source_var = VSDTC,
-    cat_fun = comp_func,
-    filter_add = VISITNUM==8,
-    mode = "last"
-  ) adsl %>%
-  derive_var_merged_exist_flag(
-    dataset_add = vs,
-    by_vars = vars(STUDYID, USUBJID),
-    filter_add = VISITNUM==8,
-    new_var = COMP8FL,
-    condition = !is.na(VSDTC)
+    new_vars = vars(VISIT1DT = SVSTDTC),
+    filter_add = VISITNUM==1
   ) %>%
-  # left_join(vs_8) %>%
-  # left_join(vs_10) %>%
-  # left_join(vs_12) %>%
-  mutate(COMP8FL = ifelse(!is.na(VSDTC8) & VSDTC8<= RFENDTC,"Y","N"),
-         COMP16FL = ifelse(!is.na(VSDTC10) & VSDTC10<= RFENDTC,"Y","N"),
-         COMP24FL = ifelse(!is.na(VSDTC12) & VSDTC12<= RFENDTC,"Y","N")) %>%
-  select(-VSDTC8,-VSDTC10,-VSDTC12)
-
-
-
-
-
-
-adsl2 <- adsl %>%
   derive_vars_disposition_reason(
     dataset_ds = ds,
     new_var = DCSREAS,
@@ -194,6 +186,7 @@ adsl2 <- adsl %>%
     filter_add = DSTERM == "PROTOCOL COMPLETED"
   )
 
+## Deriving treatment start date, end date and duration ----
 
 ex_ext <- ex %>%
   select(USUBJID,VISITNUM, EXENDTC) %>%
@@ -216,11 +209,14 @@ adsl <- adsl %>%
     new_vars = vars(TRTSDT = SVSTDTC),
     filter_add = VISITNUM==3
   ) %>%
+  mutate(TRTSDT = as.Date(TRTSDT)) %>%
   derive_var_trtdurd()
 
+rm(ex_ext)
 
-efffl <-
-  qs %>%
+## Deriving ITTFL, SAFFL and EFFFL ----
+
+efffl <- qs %>%
   filter(VISITNUM>3) %>%
   group_by(USUBJID) %>%
   summarise(adas = sum(QSCAT=="ALZHEIMER'S DISEASE ASSESSMENT SCALE"),
@@ -231,9 +227,26 @@ efffl <-
   select(USUBJID, efffl_fl)
 
 
-adsl <-
-  adsl %>%
+adsl <- adsl %>%
+  mutate(ITTFL = ifelse(!is.na(ARMCD),"Y","N"),
+         SAFFL = ifelse(ITTFL == "Y" & !is.na(TRTSDT),"Y","N")
+  ) %>%
   left_join(efffl) %>%
   mutate(efffl_fl = if_else(is.na(efffl_fl),"N","Y")) %>%
   mutate(EFFFL = if_else(SAFFL=="Y" & efffl_fl=="Y","Y","N")) %>%
   select(-efffl_fl)
+
+rm(efffl)
+
+
+# Export ADSL ----
+
+var_order <- read_excel("metadata/specs.xlsx",
+                    sheet = "Variables") %>%
+  filter(Dataset=="ADSL") %>%
+  pull(Variable)
+
+adsl <- adsl %>%
+  select(all_of(var_order))
+
+xportr_write(adsl, "adam/adsl.xpt")
