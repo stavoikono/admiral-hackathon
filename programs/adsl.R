@@ -26,8 +26,8 @@ sc <- read_xpt("sdtm/sc.xpt") %>% convert_blanks_to_na()
 
 trtn <- function(x){
   case_when(x=="Placebo" ~ 0,
-            x=="Xanomeline Low Dose" ~ 1,
-            x=="Xanomeline High Dose" ~ 2)
+            x=="Xanomeline Low Dose" ~ 54,
+            x=="Xanomeline High Dose" ~ 81)
 }
 
 comp_func <- function(x){
@@ -42,9 +42,10 @@ format_eosstt <- function(DSDECOD) {
 
 pooled_sites_id <- dm %>%
   filter(ARM!="Screen Failure") %>%
-  count(SITEID, sort = T) %>%
+  count(SITEID, ARM,  sort = T) %>%
   filter(n<3) %>%
-  pull(SITEID)
+  pull(SITEID) %>%
+  unique()
 
 adsl <- dm %>%
   filter(ARM!="Screen Failure") %>%
@@ -54,7 +55,7 @@ adsl <- dm %>%
          SITEGR1 = if_else(SITEID %in% pooled_sites_id,"900",SITEID),
          AGEGR1 = case_when(AGE < 65 ~ "<65",
                             AGE >=65 & AGE<=80 ~ "65-80",
-                            TRUE ~ ">80",),
+                            TRUE ~ ">80"),
          AGEGR1N = case_when(AGE < 65 ~ 1,
                             AGE >=65 & AGE<=80 ~ 2,
                             TRUE ~ 3),
@@ -150,6 +151,7 @@ adsl <- adsl %>%
     new_vars = vars(VISIT1DT = SVSTDTC),
     filter_add = VISITNUM==1
   ) %>%
+  mutate(VISIT1DT = as.Date(VISIT1DT)) %>%
   derive_vars_disposition_reason(
     dataset_ds = ds,
     new_var = DCSREAS,
@@ -177,8 +179,7 @@ adsl <- adsl %>%
     new_vars = vars(DISONSDT = MHSTDTC),
     filter_add = MHCAT == "PRIMARY DIAGNOSIS"
   ) %>%
-  mutate(VISIT1DT = as.Date(VISIT1DT),
-         DISONSDT = as.Date(DISONSDT)) %>%
+  mutate(DISONSDT = as.Date(DISONSDT)) %>%
   derive_vars_duration(
     new_var = DURDIS,
     out_unit = "months",
@@ -246,7 +247,7 @@ rm(efffl)
 
 ## Deriving CUMDOSE
 
-test <- adsl %>%
+df_cumdose <- adsl %>%
   derive_vars_merged(
     dataset_add = sv,
     by_vars = vars(STUDYID, USUBJID),
@@ -260,16 +261,16 @@ test <- adsl %>%
     filter_add = VISITNUM==12
   ) %>%
   left_join(
-    vs %>%
-      filter(VISITNUM!=201) %>%
+    sv %>%
+      filter(!VISITNUM %in% c(101,201)) %>%
       group_by(USUBJID) %>%
       slice_max(VISITNUM) %>%
       ungroup() %>%
-      select(USUBJID,VISITNUM,VSDTC) %>%
+      select(USUBJID,VISITNUM,SVSTDTC) %>%
       distinct()
   ) %>%
   select(USUBJID, TRT01PN, VISITNUM, TRTSDT, VISIT4DT, VISIT12DT, TRTEDT) %>%
-  filter(TRT01PN==2) %>%
+  filter(TRT01PN==81) %>%
   mutate(VISIT4DT = as.Date(VISIT4DT),
          VISIT12DT = as.Date(VISIT12DT)) %>%
   mutate(VISIT4DT = if_else(VISITNUM<=4 & VISITNUM>3,TRTEDT,VISIT4DT),
@@ -280,7 +281,15 @@ test <- adsl %>%
   mutate(CUMDOSE = 54*INTERVAL1 + 81*INTERVAL2 + 54*INTERVAL3) %>%
   select(USUBJID,TRT01PN,CUMDOSE)
 
+adsl <- adsl %>%
+  left_join(df_cumdose) %>%
+  rowwise() %>%
+  mutate(CUMDOSE = if_else(is.na(CUMDOSE),TRT01PN*TRTDURD,CUMDOSE),
+         AVGDD = CUMDOSE/TRTDURD) %>%
+  ungroup()
 
+
+rm(df_cumdose)
 
 # Formatting ADSL for extraction ----
 
