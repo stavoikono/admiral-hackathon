@@ -50,21 +50,22 @@ pooled_sites_id <- dm %>%
 adsl <- dm %>%
   filter(ARM!="Screen Failure") %>%
   select(-DOMAIN) %>%
-  mutate(TRT01P = ARM,
-         TRT01A = TRT01P,
-         SITEGR1 = if_else(SITEID %in% pooled_sites_id,"900",SITEID),
-         AGEGR1 = case_when(AGE < 65 ~ "<65",
-                            AGE >=65 & AGE<=80 ~ "65-80",
-                            TRUE ~ ">80"),
-         AGEGR1N = case_when(AGE < 65 ~ 1,
-                            AGE >=65 & AGE<=80 ~ 2,
-                            TRUE ~ 3),
-         RACEN = case_when(RACE=="AMERICAN INDIAN OR ALASKA NATIVE" ~ 1,
-                           RACE=="ASIAN" ~ 2,
-                           RACE=="BLACK OR AFRICAN AMERICAN" ~ 3,
-                           RACE=="WHITE" ~ 6),
-         TRT01AN = trtn(TRT01A),
-         TRT01PN = trtn(TRT01P)
+  mutate(
+    TRT01P = ARM,
+    TRT01A = TRT01P,
+    SITEGR1 = if_else(SITEID %in% pooled_sites_id,"900",SITEID),
+    AGEGR1 = case_when(AGE < 65 ~ "<65",
+                       AGE >=65 & AGE<=80 ~ "65-80",
+                       TRUE ~ ">80"),
+    AGEGR1N = case_when(AGE < 65 ~ 1,
+                        AGE >=65 & AGE<=80 ~ 2,
+                        TRUE ~ 3),
+    RACEN = case_when(RACE=="AMERICAN INDIAN OR ALASKA NATIVE" ~ 1,
+                      RACE=="ASIAN" ~ 2,
+                      RACE=="BLACK OR AFRICAN AMERICAN" ~ 3,
+                      RACE=="WHITE" ~ 6),
+    TRT01AN = trtn(TRT01A),
+    TRT01PN = trtn(TRT01P)
   ) %>%
   derive_vars_merged(
     dataset_add = vs,
@@ -78,10 +79,11 @@ adsl <- dm %>%
     new_vars = vars(WEIGHTBL = VSSTRESN),
     filter_add = VSTESTCD=="WEIGHT" & VISITNUM==3
   ) %>%
-  mutate(BMIBL = compute_bmi(HEIGHTBL,WEIGHTBL),
-         BMIBLGR1 = case_when(BMIBL < 25 ~ "<25",
-                              BMIBL >=25 & BMIBL < 30 ~ "25-<30",
-                              BMIBL >=30 ~ ">=30")
+  mutate(
+    BMIBL = compute_bmi(HEIGHTBL,WEIGHTBL),
+    BMIBLGR1 = case_when(BMIBL < 25 ~ "<25",
+                         BMIBL >=25 & BMIBL < 30 ~ "25-<30",
+                         BMIBL >=30 ~ ">=30")
   ) %>%
   derive_vars_dt(
     dtc = RFENDTC,
@@ -110,31 +112,40 @@ adsl <- adsl %>%
 ## Deriving completion flags ----
 
 vs_comp <- vs %>%
-  left_join(adsl %>% select(USUBJID,RFENDT)) %>%
-  mutate(COMP8FL = if_else(VISITNUM==8 & VSDTC<=RFENDT,"Y","N"),
-         COMP16FL = if_else(VISITNUM==10 & VSDTC<=RFENDT,"Y","N"),
-         COMP24FL = if_else(VISITNUM==12 & VSDTC<=RFENDT,"Y","N")
-         ) %>%
+  left_join(
+    adsl %>%
+      select(USUBJID,RFENDT)
+  ) %>%
+  mutate(
+    COMP8FL = if_else(VISITNUM==8 & VSDTC<=RFENDT,"Y","N"),
+    COMP16FL = if_else(VISITNUM==10 & VSDTC<=RFENDT,"Y","N"),
+    COMP24FL = if_else(VISITNUM==12 & VSDTC<=RFENDT,"Y","N")
+  ) %>%
   distinct(USUBJID,COMP8FL,COMP16FL,COMP24FL,VISITNUM) %>%
   filter(VISITNUM %in% c(8,10,12))
 
 
 adsl <- adsl %>%
-  left_join(vs_comp %>%
-              filter(VISITNUM==8) %>%
-              select(USUBJID,COMP8FL)
-            ) %>%
-  left_join(vs_comp %>%
-              filter(VISITNUM==10) %>%
-              select(USUBJID,COMP16FL)
-            ) %>%
-  left_join(vs_comp %>%
-              filter(VISITNUM==12) %>%
-              select(USUBJID,COMP24FL)
-            ) %>%
-  mutate(COMP8FL = if_else(is.na(COMP8FL),"N",COMP8FL),
-         COMP16FL = if_else(is.na(COMP16FL),"N",COMP16FL),
-         COMP24FL = if_else(is.na(COMP24FL),"N",COMP24FL))
+  left_join(
+    vs_comp %>%
+      filter(VISITNUM==8) %>%
+      select(USUBJID,COMP8FL)
+  ) %>%
+  left_join(
+    vs_comp %>%
+      filter(VISITNUM==10) %>%
+      select(USUBJID,COMP16FL)
+  ) %>%
+  left_join(
+    vs_comp %>%
+      filter(VISITNUM==12) %>%
+      select(USUBJID,COMP24FL)
+  ) %>%
+  mutate(
+    COMP8FL = if_else(is.na(COMP8FL),"N",COMP8FL),
+    COMP16FL = if_else(is.na(COMP16FL),"N",COMP16FL),
+    COMP24FL = if_else(is.na(COMP24FL),"N",COMP24FL)
+  )
 
 
 rm(vs_comp)
@@ -151,7 +162,9 @@ adsl <- adsl %>%
     new_vars = vars(VISIT1DT = SVSTDTC),
     filter_add = VISITNUM==1
   ) %>%
-  mutate(VISIT1DT = as.Date(VISIT1DT)) %>%
+  mutate(
+    VISIT1DT = as.Date(VISIT1DT)
+  ) %>%
   derive_vars_disposition_reason(
     dataset_ds = ds,
     new_var = DCSREAS,
@@ -168,23 +181,30 @@ adsl <- adsl %>%
   derive_vars_merged(
     dataset_add = ds,
     by_vars = vars(STUDYID, USUBJID),
-    new_vars = vars(DSDECOD),
+    new_vars = vars(DCDECOD = DSDECOD ),
     filter_add = DSCAT == "DISPOSITION EVENT"
   ) %>%
-  mutate(DISCONFL = if_else(DCSREAS!="COMPLETED","Y",NA_character_),
-         DSRAEFL = if_else(DCSREAS!="ADVERSE EVENT","Y",NA_character_)) %>%
+  mutate(
+    DISCONFL = if_else(DCSREAS!="COMPLETED","Y",NA_character_),
+    DSRAEFL = if_else(DCSREAS!="ADVERSE EVENT","Y",NA_character_)
+  ) %>%
   derive_vars_merged(
     dataset_add = mh,
     by_vars = vars(USUBJID),
     new_vars = vars(DISONSDT = MHSTDTC),
     filter_add = MHCAT == "PRIMARY DIAGNOSIS"
   ) %>%
-  mutate(DISONSDT = as.Date(DISONSDT)) %>%
+  mutate(
+    DISONSDT = as.Date(DISONSDT)
+  ) %>%
   derive_vars_duration(
     new_var = DURDIS,
     out_unit = "months",
-    start_date = VISIT1DT,
-    end_date = DISONSDT
+    start_date = DISONSDT,
+    end_date = VISIT1DT
+  ) %>%
+  mutate(
+    DURDSGR1 = if_else(DURDIS<12,"<12",">=12")
   ) %>%
   derive_vars_merged(
     dataset_add = ds,
