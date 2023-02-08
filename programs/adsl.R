@@ -111,15 +111,15 @@ adsl <- adsl %>%
 
 ## Deriving completion flags ----
 
-vs_comp <- vs %>%
+vs_comp <- sv %>%
   left_join(
-    adsl %>%
-      select(USUBJID,RFENDT)
+    dm %>%
+      select(USUBJID,RFENDTC)
   ) %>%
   mutate(
-    COMP8FL = if_else(VISITNUM==8 & VSDTC<=RFENDT,"Y","N"),
-    COMP16FL = if_else(VISITNUM==10 & VSDTC<=RFENDT,"Y","N"),
-    COMP24FL = if_else(VISITNUM==12 & VSDTC<=RFENDT,"Y","N")
+    COMP8FL = if_else(VISITNUM==8 & SVSTDTC<=RFENDTC,"Y","N"),
+    COMP16FL = if_else(VISITNUM==10 & SVSTDTC<=RFENDTC,"Y","N"),
+    COMP24FL = if_else(VISITNUM==12 & SVSTDTC<=RFENDTC,"Y","N")
   ) %>%
   distinct(USUBJID,COMP8FL,COMP16FL,COMP24FL,VISITNUM) %>%
   filter(VISITNUM %in% c(8,10,12))
@@ -211,32 +211,41 @@ adsl <- adsl %>%
     by_vars = vars(USUBJID),
     new_vars = vars(VISNUMEN=VISITNUM),
     filter_add = DSTERM == "PROTOCOL COMPLETED"
+  ) %>%
+  mutate(
+    VISNUMEN = if_else(VISNUMEN==12,13,VISNUMEN)
   )
 
 ## Deriving treatment start date, end date and duration ----
 
 ex_ext <- ex %>%
   select(USUBJID,VISITNUM, EXENDTC) %>%
-  mutate(EXENDTC = as.Date(EXENDTC)) %>%
+  mutate(
+    EXENDTC = as.Date(EXENDTC)
+  ) %>%
   group_by(USUBJID) %>%
   slice_max(VISITNUM) %>%
   ungroup() %>%
-  left_join( adsl %>% select(USUBJID, RFENDT)) %>%
-  rowwise() %>%
+  left_join(
+    adsl %>% select(USUBJID, RFENDT)
+  ) %>%
   mutate(EXENDTC = if_else(VISITNUM >=3 & is.na(EXENDTC),RFENDT,EXENDTC)) %>%
-  ungroup() %>%
   select(USUBJID, TRTEDT = EXENDTC)
 
 
 adsl <- adsl %>%
-  left_join(ex_ext) %>%
+  left_join(
+    ex_ext
+  ) %>%
   derive_vars_merged(
     dataset_add = sv,
     by_vars = vars(STUDYID, USUBJID),
     new_vars = vars(TRTSDT = SVSTDTC),
     filter_add = VISITNUM==3
   ) %>%
-  mutate(TRTSDT = as.Date(TRTSDT)) %>%
+  mutate(
+    TRTSDT = as.Date(TRTSDT)
+  ) %>%
   derive_var_trtdurd()
 
 rm(ex_ext)
@@ -246,8 +255,10 @@ rm(ex_ext)
 efffl <- qs %>%
   filter(VISITNUM>3) %>%
   group_by(USUBJID) %>%
-  summarise(adas = sum(QSCAT=="ALZHEIMER'S DISEASE ASSESSMENT SCALE"),
-            cibic = sum(QSCAT=="CLINICIAN'S INTERVIEW-BASED IMPRESSION OF CHANGE (CIBIC+)")) %>%
+  summarise(
+    adas = sum(QSCAT=="ALZHEIMER'S DISEASE ASSESSMENT SCALE"),
+    cibic = sum(QSCAT=="CLINICIAN'S INTERVIEW-BASED IMPRESSION OF CHANGE (CIBIC+)")
+  ) %>%
   ungroup() %>%
   filter(adas>0 & cibic>0) %>%
   mutate(efffl_fl = "Y") %>%
@@ -255,12 +266,17 @@ efffl <- qs %>%
 
 
 adsl <- adsl %>%
-  mutate(ITTFL = if_else(!is.na(ARMCD),"Y","N"),
-         SAFFL = if_else(ITTFL == "Y" & !is.na(TRTSDT),"Y","N")
+  mutate(
+    ITTFL = if_else(!is.na(ARMCD),"Y","N"),
+    SAFFL = if_else(ITTFL == "Y" & !is.na(TRTSDT),"Y","N")
   ) %>%
-  left_join(efffl) %>%
-  mutate(efffl_fl = if_else(is.na(efffl_fl),"N","Y")) %>%
-  mutate(EFFFL = if_else(SAFFL=="Y" & efffl_fl=="Y","Y","N")) %>%
+  left_join(
+    efffl
+  ) %>%
+  mutate(
+    efffl_fl = if_else(is.na(efffl_fl),"N","Y"),
+    EFFFL = if_else(SAFFL=="Y" & efffl_fl=="Y","Y","N")
+  ) %>%
   select(-efffl_fl)
 
 rm(efffl)
