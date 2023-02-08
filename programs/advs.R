@@ -6,7 +6,7 @@ ipak <- function(pkg){
   sapply(pkg, require, character.only = TRUE)
 }
 
-packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl")
+packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl","labelled")
 
 ipak(packages)
 
@@ -32,7 +32,7 @@ advs <- vs %>%
     TRTAN = TRT01AN,
     TRTA = TRT01A,
     PARAMCD = VSTESTCD,
-    PARAM = VSBLFL,
+    PARAM = VSTEST,
     BASETYPE = VSTPT,
     AVAL = VSSTRESN,
     ATPT = VSTPT,
