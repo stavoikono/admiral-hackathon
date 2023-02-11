@@ -52,7 +52,7 @@ adae <- ae %>%
     reference_date = TRTSDT,
     source_vars = vars(TRTSDT, AENDT, ASTDT)
   ) %>%
-  mutate(TRTEMFL2 = case_when(is.na(ASTDT) ~ "N",
+  mutate(TRTEMFL = case_when(is.na(ASTDT) ~ "N",
                               ASTDT >= TRTSDT ~"Y",
                               TRUE ~ "N")
   ) %>%
@@ -67,4 +67,101 @@ adae <- ae %>%
   ))
 
 
+## Derive AOCC flag variables ----
+adae <- adae %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID),
+      order = vars(USUBJID, ASTDT, AESEQ),
+      new_var = AOCC01FL,
+      mode = "first"
+    ),
+    filter = CQ01NAM=="DERMATOLOGIC EVENTS" & TRTEMFL=="Y"
+  ) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID),
+      order = vars(USUBJID, ASTDT, AESEQ),
+      new_var = AOCC02FL,
+      mode = "first"
+    ),
+    filter = AESER=="Y" & TRTEMFL=="Y"
+  ) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID, AEBODSYS),
+      order = vars(USUBJID,AEBODSYS, ASTDT, AESEQ),
+      new_var = AOCC03FL,
+      mode = "first"
+    ),
+    filter = AESER=="Y" & TRTEMFL=="Y"
+  ) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID, AEBODSYS,AEDECOD),
+      order = vars(USUBJID,AEBODSYS,AEDECOD, ASTDT, AESEQ),
+      new_var = AOCC04FL,
+      mode = "first"
+    ),
+    filter = AESER=="Y" & TRTEMFL=="Y"
+  ) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID),
+      order = vars(USUBJID,ASTDT, AESEQ),
+      new_var = AOCCFL,
+      mode = "first"
+    ),
+    filter = TRTEMFL=="Y"
+  ) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID, AEBODSYS,AEDECOD),
+      order = vars(USUBJID, AEBODSYS, AEDECOD, ASTDT, AESEQ),
+      new_var = AOCCPFL,
+      mode = "first"
+    ),
+    filter = TRTEMFL=="Y"
+  ) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID, AEBODSYS),
+      order = vars(USUBJID, AEBODSYS, ASTDT, AESEQ),
+      new_var = AOCCSFL,
+      mode = "first"
+    ),
+    filter = TRTEMFL=="Y"
+  )
 
+
+# Formatting ADSL for extraction ----
+
+## Ordering ----
+
+var_order <- read_excel("metadata/specs.xlsx",
+                        sheet = "Variables") %>%
+  filter(Dataset=="ADAE") %>%
+  pull(Variable)
+
+adae <- adae %>%
+  select(all_of(var_order))
+
+## Adding labels for derived variables ----
+
+labels <- read_excel("metadata/specs.xlsx",
+                     sheet = "Variables") %>%
+  filter(Dataset=="ADAE") %>%
+  pull(Label)
+
+adae <- set_variable_labels(adae, .labels = labels)
+
+# Export ADSL ----
+
+xportr_write(adae, "adam/adae.xpt")
