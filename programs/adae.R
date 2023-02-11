@@ -6,16 +6,17 @@ ipak <- function(pkg){
   sapply(pkg, require, character.only = TRUE)
 }
 
-packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl","labelled")
+packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl")
 
 ipak(packages)
 
-# Loading ADSL & VS ----
+
+# Loading ADSL & AE ----
 
 adsl <- read_xpt("adam/adsl.xpt") %>% convert_blanks_to_na()
 ae <- read_xpt("sdtm/ae.xpt") %>% convert_blanks_to_na()
 
-# Deriving ADVS ----
+# Deriving ADAE ----
 
 adsl_vars <- vars(RACE, RACEN, SAFFL, SEX, SITEID, STUDYID, USUBJID, TRT01A,
                   TRT01AN, TRTSDT, TRTEDT,  AGE,AGEGR1, AGEGR1N)
@@ -141,27 +142,19 @@ adae <- adae %>%
   )
 
 
-# Formatting ADSL for extraction ----
+# Formatting ADAE for extraction ----
 
-## Ordering ----
-
-var_order <- read_excel("metadata/specs.xlsx",
-                        sheet = "Variables") %>%
+adae_spec <- readxl::read_xlsx("metadata/specs.xlsx", sheet = "Variables")  %>%
   filter(Dataset=="ADAE") %>%
-  pull(Variable)
+  dplyr::rename(type = "Data Type") %>%
+  rlang::set_names(tolower) %>%
+  mutate(format = str_to_lower(format))
 
 adae <- adae %>%
-  select(all_of(var_order))
+  select(adae_spec$variable) %>%
+  xportr_label(adae_spec, domain = "ADAE") %>%
+  xportr_format(adae_spec, domain = "ADAE") %>%
+  xportr_length(adae_spec, domain = "ADAE") %>%
+  xportr_write(path = "adam/ADAE.xpt",
+               label = "Adverse Events Analysis Dataset")
 
-## Adding labels for derived variables ----
-
-labels <- read_excel("metadata/specs.xlsx",
-                     sheet = "Variables") %>%
-  filter(Dataset=="ADAE") %>%
-  pull(Label)
-
-adae <- set_variable_labels(adae, .labels = labels)
-
-# Export ADSL ----
-
-xportr_write(adae, "adam/adae.xpt")
