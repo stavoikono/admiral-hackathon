@@ -39,13 +39,13 @@ adae <- ae %>%
   ) %>%
   derive_vars_dt(
     new_vars_prefix = "AST",
-    dtc = AESTDTC,
-    highest_imputation = "D",
-    min_dates = vars(TRTSDT)
+    dtc = AESTDTC
+    #highest_imputation = "D",
+    #min_dates = vars(TRTSDT)
   ) %>%
   rowwise() %>%
   mutate(
-    ADURN = as.numeric(AENDT - ASTDT + 1)
+    ADURN = as.numeric(difftime(AENDT,ASTDT, units = "days")) + 1
   ) %>%
   ungroup() %>%
   mutate(ADURU = if_else(!is.na(ADURN),"DAY", NA_character_)) %>%
@@ -53,11 +53,11 @@ adae <- ae %>%
     reference_date = TRTSDT,
     source_vars = vars(TRTSDT, AENDT, ASTDT)
   ) %>%
-  mutate(TRTEMFL = case_when(is.na(ASTDT) ~ "N",
-                              ASTDT >= TRTSDT ~"Y",
-                              TRUE ~ "N")
+  mutate(
+    TRTEMFL = case_when(
+      ASTDT >= TRTSDT ~"Y",
+      TRUE ~ NA_character_)
   ) %>%
-  #derive_var_trtemfl(new_var = TRTEMFL,start_date = ASTDT, end_date = AENDT, trt_start_date = TRTSDT)
   mutate(
     CQ01NAM =
       if_else(

@@ -6,7 +6,7 @@ ipak <- function(pkg){
   sapply(pkg, require, character.only = TRUE)
 }
 
-packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl","labelled")
+packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl")
 
 ipak(packages)
 
@@ -79,8 +79,11 @@ adsl <- dm %>%
     new_vars = vars(WEIGHTBL = VSSTRESN),
     filter_add = VSTESTCD=="WEIGHT" & VISITNUM==3
   ) %>%
+  mutate(WEIGHTBL=round(WEIGHTBL,1),
+         HEIGHTBL=round(HEIGHTBL,1)) %>%
   mutate(
     BMIBL = compute_bmi(HEIGHTBL,WEIGHTBL),
+    BMIBL = round(BMIBL,1),
     BMIBLGR1 = case_when(BMIBL < 25 ~ "<25",
                          BMIBL >=25 & BMIBL < 30 ~ "25-<30",
                          BMIBL >=30 ~ ">=30")
@@ -171,6 +174,15 @@ adsl <- adsl %>%
     reason_var = DSDECOD,
     filter_ds = DSCAT == "DISPOSITION EVENT"
   ) %>%
+  mutate(
+    DCSREAS = str_to_title(DCSREAS),
+    DCSREAS = case_when(DCSREAS=="Lost To Follow-Up" ~ "Lost to Follow-up",
+                        DCSREAS=="Lack Of Efficacy" ~ "Lack of Efficacy",
+                        DCSREAS=="Study Terminated By Sponsor" ~ "Sponsor Decision",
+                        DCSREAS=="Withdrawal By Subject" ~ "Withdrew Consent",
+                        #DCSREAS=="Protocol Violation" ~ "I/E Not Met",
+                        DCSREAS=="I/E Not Met" ~ "Protocol Violation",
+                        TRUE ~ DCSREAS)) %>%
   derive_var_disposition_status(
     dataset_ds = ds,
     new_var = EOSSTT,
@@ -186,7 +198,7 @@ adsl <- adsl %>%
   ) %>%
   mutate(
     DISCONFL = if_else(DCSREAS!="COMPLETED","Y",NA_character_),
-    DSRAEFL = if_else(DCSREAS!="ADVERSE EVENT","Y",NA_character_)
+    DSRAEFL = if_else(DCSREAS=="Adverse Event","Y",NA_character_)
   ) %>%
   derive_vars_merged(
     dataset_add = mh,
@@ -204,6 +216,7 @@ adsl <- adsl %>%
     end_date = VISIT1DT
   ) %>%
   mutate(
+    DURDIS =  round(DURDIS,1),
     DURDSGR1 = if_else(DURDIS<12,"<12",">=12")
   ) %>%
   derive_vars_merged(
@@ -297,21 +310,21 @@ df_cumdose <- adsl %>%
     filter_add = VISITNUM==12
   ) %>%
   left_join(
-    sv %>%
+    vs %>%
       filter(!VISITNUM %in% c(101,201)) %>%
       group_by(USUBJID) %>%
       slice_max(VISITNUM) %>%
       ungroup() %>%
-      select(USUBJID,VISITNUM,SVSTDTC) %>%
+      select(USUBJID,VISITNUM,VSDTC) %>%
       distinct()
   ) %>%
   select(USUBJID, TRT01PN, VISITNUM, TRTSDT, VISIT4DT, VISIT12DT, TRTEDT) %>%
   filter(TRT01PN==81) %>%
   mutate(VISIT4DT = as.Date(VISIT4DT),
          VISIT12DT = as.Date(VISIT12DT)) %>%
-  mutate(VISIT4DT = if_else(VISITNUM<=4 & VISITNUM>3,TRTEDT,VISIT4DT),
+  mutate(VISIT4DT = if_else(VISITNUM<=4 & VISITNUM>=3,TRTEDT,VISIT4DT),
          VISIT12DT = if_else(VISITNUM<=12 & VISITNUM>4,TRTEDT,VISIT12DT)) %>%
-  mutate(INTERVAL1 = if_else(VISITNUM>3,as.numeric(difftime(VISIT4DT,TRTSDT,units = "days")) + 1,0),
+  mutate(INTERVAL1 = if_else(VISITNUM>=3,as.numeric(difftime(VISIT4DT,TRTSDT,units = "days")) + 1,0),
          INTERVAL2 = if_else(VISITNUM>4, as.numeric(difftime(VISIT12DT,VISIT4DT,units = "days")), 0),
          INTERVAL3 = if_else(VISITNUM>12, as.numeric(difftime(TRTEDT, VISIT12DT,units = "days")), 0)) %>%
   mutate(CUMDOSE = 54*INTERVAL1 + 81*INTERVAL2 + 54*INTERVAL3) %>%
@@ -321,7 +334,7 @@ adsl <- adsl %>%
   left_join(df_cumdose) %>%
   rowwise() %>%
   mutate(CUMDOSE = if_else(is.na(CUMDOSE),TRT01PN*TRTDURD,CUMDOSE),
-         AVGDD = CUMDOSE/TRTDURD) %>%
+         AVGDD = round(CUMDOSE/TRTDURD,1)) %>%
   ungroup()
 
 
@@ -329,25 +342,16 @@ rm(df_cumdose)
 
 # Formatting ADSL for extraction ----
 
-## Ordering ----
-
-var_order <- read_excel("metadata/specs.xlsx",
-                    sheet = "Variables") %>%
+adsl_spec <- readxl::read_xlsx("metadata/specs.xlsx", sheet = "Variables")  %>%
   filter(Dataset=="ADSL") %>%
-  pull(Variable)
+  dplyr::rename(type = "Data Type") %>%
+  rlang::set_names(tolower) %>%
+  mutate(format = str_to_lower(format))
 
 adsl <- adsl %>%
-  select(all_of(var_order))
-
-## Adding labels for derived variables ----
-
-labels <- read_excel("metadata/specs.xlsx",
-                     sheet = "Variables") %>%
-  filter(Dataset=="ADSL") %>%
-  pull(Label)
-
-adsl <- set_variable_labels(adsl, .labels = labels)
-
-# Export ADSL ----
-
-xportr_write(adsl, "adam/adsl.xpt")
+  select(adsl_spec$variable) %>%
+  xportr_label(adsl_spec, domain = "ADSL") %>%
+  xportr_format(adsl_spec, domain = "ADSL") %>%
+  xportr_length(adsl_spec, domain = "ADSL") %>%
+  xportr_write(path = "adam/ADSL.xpt",
+               label = "Subject-Level Analysis Dataset")

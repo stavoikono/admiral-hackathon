@@ -6,7 +6,7 @@ ipak <- function(pkg){
   sapply(pkg, require, character.only = TRUE)
 }
 
-packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl","labelled")
+packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl")
 
 ipak(packages)
 
@@ -58,6 +58,12 @@ advs <- advs %>%
     new_vars = vars(BASE = VSSTRESN),
     filter_add = VSBLFL=="Y"
   ) %>%
+  # derive_var_base(
+  #   by_vars = vars(STUDYID, USUBJID, PARAMCD, BASETYPE),
+  #   source_var = AVAL,
+  #   new_var = BASE,
+  #   filter = VSBLFL=="Y"
+  # ) %>%
   rowwise() %>%
   mutate(
     CHG = AVAL - BASE,
@@ -97,25 +103,16 @@ advs <- advs %>%
 
 # Formatting ADVS for extraction ----
 
-## Ordering ----
-
-var_order <- read_excel("metadata/specs.xlsx",
-                        sheet = "Variables") %>%
+advs_spec <- readxl::read_xlsx("metadata/specs.xlsx", sheet = "Variables")  %>%
   filter(Dataset=="ADVS") %>%
-  pull(Variable)
+  dplyr::rename(type = "Data Type") %>%
+  rlang::set_names(tolower) %>%
+  mutate(format = str_to_lower(format))
 
 advs <- advs %>%
-  select(all_of(var_order))
-
-## Adding labels for derived variables ----
-
-labels <- read_excel("metadata/specs.xlsx",
-                     sheet = "Variables") %>%
-  filter(Dataset=="ADVS") %>%
-  pull(Label)
-
-advs <- set_variable_labels(advs, .labels = labels)
-
-# Export ADVS ----
-
-xportr_write(advs, "adam/advs.xpt")
+  select(advs_spec$variable) %>%
+  xportr_label(advs_spec, domain = "ADVS") %>%
+  xportr_format(advs_spec, domain = "ADVS") %>%
+  xportr_length(advs_spec, domain = "ADVS") %>%
+  xportr_write(path = "adam/ADVS.xpt",
+               label = "Vital Signs Analysis Dataset")
