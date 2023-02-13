@@ -18,7 +18,7 @@ ae <- read_xpt("sdtm/ae.xpt") %>% convert_blanks_to_na()
 
 # Deriving ADAE ----
 
-adsl_vars <- vars(RACE, RACEN, SAFFL, SEX, SITEID, STUDYID, USUBJID, TRT01A,
+adsl_vars <- vars(RACE, SAFFL, SEX, SITEID, STUDYID, USUBJID, TRT01A,
                   TRT01AN, TRTSDT, TRTEDT,  AGE,AGEGR1, AGEGR1N)
 
 
@@ -31,7 +31,11 @@ adae <- ae %>%
   ) %>%
   mutate(
     TRTAN = TRT01AN,
-    TRTA = TRT01A
+    TRTA = TRT01A,
+    RACEN = case_when(RACE=="AMERICAN INDIAN OR ALASKA NATIVE" ~ 6,
+                      RACE=="BLACK OR AFRICAN AMERICAN" ~ 2,
+                      RACE=="WHITE" ~ 1,
+                      TRUE ~ NA_real_)
   ) %>%
   derive_vars_dt(
     new_vars_prefix = "AEN",
@@ -39,9 +43,10 @@ adae <- ae %>%
   ) %>%
   derive_vars_dt(
     new_vars_prefix = "AST",
-    dtc = AESTDTC
-    #highest_imputation = "D",
-    #min_dates = vars(TRTSDT)
+    dtc = AESTDTC,
+    flag_imputation = "date",
+    highest_imputation = "D",
+    min_dates = vars(TRTSDT)
   ) %>%
   rowwise() %>%
   mutate(

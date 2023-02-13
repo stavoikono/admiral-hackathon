@@ -61,9 +61,9 @@ adsl <- dm %>%
                         AGE >=65 & AGE<=80 ~ 2,
                         TRUE ~ 3),
     RACEN = case_when(RACE=="AMERICAN INDIAN OR ALASKA NATIVE" ~ 1,
-                      RACE=="ASIAN" ~ 2,
                       RACE=="BLACK OR AFRICAN AMERICAN" ~ 3,
-                      RACE=="WHITE" ~ 6),
+                      RACE=="WHITE" ~ 6,
+                      TRUE ~ NA_real_),
     TRT01AN = trtn(TRT01A),
     TRT01PN = trtn(TRT01P)
   ) %>%
@@ -181,7 +181,7 @@ adsl <- adsl %>%
                         DCSREAS=="Study Terminated By Sponsor" ~ "Sponsor Decision",
                         DCSREAS=="Withdrawal By Subject" ~ "Withdrew Consent",
                         #DCSREAS=="Protocol Violation" ~ "I/E Not Met",
-                        DCSREAS=="I/E Not Met" ~ "Protocol Violation",
+                        #DCSREAS=="I/E Not Met" ~ "Protocol Violation",
                         TRUE ~ DCSREAS)) %>%
   derive_var_disposition_status(
     dataset_ds = ds,
@@ -223,10 +223,10 @@ adsl <- adsl %>%
     dataset_add = ds,
     by_vars = vars(USUBJID),
     new_vars = vars(VISNUMEN=VISITNUM),
-    filter_add = DSTERM == "PROTOCOL COMPLETED"
+    filter_add = DSCAT == "DISPOSITION EVENT"
   ) %>%
   mutate(
-    VISNUMEN = if_else(VISNUMEN==12,13,VISNUMEN)
+    VISNUMEN = if_else(VISNUMEN==13,12,VISNUMEN)
   )
 
 ## Deriving treatment start date, end date and duration ----

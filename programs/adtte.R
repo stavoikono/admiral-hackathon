@@ -6,7 +6,7 @@ ipak <- function(pkg){
   sapply(pkg, require, character.only = TRUE)
 }
 
-packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl","labelled")
+packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr","stringr","readxl")
 
 ipak(packages)
 
@@ -43,35 +43,19 @@ adtte <- adae %>%
     SRCSEQ = if_else(SRCDOM == "ADAE", AESEQ, NA_real_)
   )
 
+
 # Formatting ADSL for extraction ----
 
-## Ordering ----
-
-var_order <- read_excel("metadata/specs.xlsx",
-                        sheet = "Variables") %>%
+adtte_spec <- readxl::read_xlsx("metadata/specs.xlsx", sheet = "Variables")  %>%
   filter(Dataset=="ADTTE") %>%
-  pull(Variable)
+  dplyr::rename(type = "Data Type") %>%
+  rlang::set_names(tolower) %>%
+  mutate(format = str_to_lower(format))
 
 adtte <- adtte %>%
-  select(all_of(var_order))
-
-## Adding labels for derived variables ----
-
-labels <- read_excel("metadata/specs.xlsx",
-                     sheet = "Variables") %>%
-  filter(Dataset=="ADTTE") %>%
-  pull(Label)
-
-adtte <- set_variable_labels(adtte, .labels = labels)
-
-# Export ADSL ----
-
-xportr_write(adae, "adam/adtte.xpt")
-
-
-
-
-
-
-
-
+  select(adtte_spec$variable) %>%
+  xportr_label(adtte_spec, domain = "ADTTE") %>%
+  xportr_format(adtte_spec, domain = "ADTTE") %>%
+  xportr_length(adtte_spec, domain = "ADTTE") %>%
+  xportr_write(path = "adam/ADTTE.xpt",
+               label = "AE Time To 1st Derm. Event Analysis")
