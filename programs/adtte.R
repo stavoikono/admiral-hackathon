@@ -10,36 +10,51 @@ packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr",
 
 ipak(packages)
 
-# Loading ADSL & VS ----
+# Loading ADSL & ADAE ----
 
 adsl <- read_xpt("adam/adsl.xpt") %>% convert_blanks_to_na()
 adae <- read_xpt("adam/adae.xpt") %>% convert_blanks_to_na()
 
-# Deriving ADVS ----
+# Deriving ADTTE ----
 
-adtte <- adae %>%
+adtte <- adsl %>%
   derive_vars_merged(
-    dataset_add = adsl,
-    new_vars = vars(TRTDURD,RFENDTC,TRT01P),
-    by_vars = vars(STUDYID, USUBJID)
+    adae,
+    new_vars = vars(ASTDT, TRTEMFL,AESEQ),
+    by_vars = vars(STUDYID, USUBJID),
+    filter_add = !is.na(CQ01NAM) & AOCC01FL=="Y"
   ) %>%
-  dplyr::rename(TRTDUR = TRTDURD, TRTP = TRT01P) %>%
+  mutate(
+    RACEN = case_when(RACE=="AMERICAN INDIAN OR ALASKA NATIVE" ~ 6,
+                      RACE=="BLACK OR AFRICAN AMERICAN" ~ 2,
+                      RACE=="WHITE" ~ 1,
+                      TRUE ~ NA_real_)
+  ) %>%
+  dplyr::rename(
+    TRTDUR = TRTDURD,
+    TRTP = TRT01P,
+    TRTA = TRT01A,
+    TRTAN = TRT01AN
+  ) %>%
   derive_vars_dt(
     new_vars_prefix = "START",
-    dtc = RFENDTC
+    dtc = RFSTDTC
   ) %>%
   mutate(
     PARAM = "Time to First Dermatologic Event",
     PARAMCD = "TTDE",
-    ADT = if_else(!is.na(ASTDT) & ASTDT > TRTSDT, ASTDT, as.Date(RFENDTC))
+    ADT = if_else(!is.na(ASTDT) & ASTDT >= TRTSDT, ASTDT, as.Date(RFENDTC))
   ) %>%
-  #derive_vars_duration(new_var = AVAL,start_date = STARTDT,end_date = ADT) %>%
   mutate(
     AVAL = as.numeric(difftime(ADT,STARTDT, units = "days")) + 1,
-    CNSR = if_else(TRTEMFL == "Y", 0, 1),
-    EVNTDESC = if_else(CNSR == 0, "Dematologic Event Occured", "Study Completion Date"),
-    SRCDOM = if_else(ADT == ASTDT, "ADAE", "ADSL"),
-    SRCVAR = if_else(ADT == ASTDT, "ASTDT", "RFENDT"),
+    CNSR = if_else(is.na(TRTEMFL),1,0),
+    EVNTDESC = if_else(CNSR == 0, "Dematologic Event Occured", "Study Completion Date")
+  ) %>%
+  mutate(
+    SRCDOM = case_when(ADT == ASTDT ~ "ADAE",
+                       TRUE ~ "ADSL"),
+    SRCVAR = case_when(ADT == ASTDT ~"ASTDT",
+                       TRUE ~ "RFENDT"),
     SRCSEQ = if_else(SRCDOM == "ADAE", AESEQ, NA_real_)
   )
 

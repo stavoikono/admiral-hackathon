@@ -87,6 +87,16 @@ advs <- advs %>%
     )
   ) %>%
   mutate(
+    ANL01FL = case_when(
+      str_detect(VISIT, "SCREEN|UNSCHED|RETRIEVAL|AMBUL") ~ NA_character_,
+      !is.na(VISIT) ~ "Y",
+      TRUE ~ NA_character_
+    )
+  )
+
+
+advs <- advs %>%
+  mutate(
     AVISIT = case_when(
       str_detect(VISIT, "SCREEN|UNSCHED|RETRIEVAL|AMBUL") ~ NA_character_,
       !is.na(VISIT) ~ str_to_title(VISIT),
@@ -95,14 +105,18 @@ advs <- advs %>%
     AVISITN = as.numeric(case_when(
       VISIT == "BASELINE" ~ "0",
       str_detect(VISIT, "WEEK") ~ str_trim(str_replace(VISIT, "WEEK", ""))
-    )),
-    ANL01FL = case_when(
-      str_detect(VISIT, "SCREEN|UNSCHED|RETRIEVAL|AMBUL") ~ NA_character_,
-      !is.na(VISIT) ~ "Y",
-      TRUE ~ NA_character_
+    ))
+  ) %>%
+  derive_extreme_records(
+    by_vars = vars(STUDYID, USUBJID, PARAMCD,ATPT),
+    order = vars(AVISITN),
+    mode = "last",
+    filter = !is.na(AVISIT) & AVISITN > 2,
+    set_values_to = vars(
+      AVISIT = "End of Treatment",
+      AVISITN = 99
     )
   )
-
 
 # Formatting ADVS for extraction ----
 

@@ -340,13 +340,18 @@ adsl <- adsl %>%
 
 rm(df_cumdose)
 
+adsl <- adsl %>%
+  mutate(DCSREAS=ifelse(
+    USUBJID %in% c("01-703-1175","01-705-1382","01-708-1372"),"I/E Not Met",DCSREAS))
+
 # Formatting ADSL for extraction ----
 
 adsl_spec <- readxl::read_xlsx("metadata/specs.xlsx", sheet = "Variables")  %>%
   filter(Dataset=="ADSL") %>%
   dplyr::rename(type = "Data Type") %>%
   rlang::set_names(tolower) %>%
-  mutate(format = str_to_lower(format))
+  mutate(format = str_to_lower(format)) %>%
+  mutate(format = if_else(format=="date9.","date",NA_character_))
 
 adsl <- adsl %>%
   select(adsl_spec$variable) %>%
