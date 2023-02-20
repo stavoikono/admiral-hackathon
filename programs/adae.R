@@ -42,6 +42,10 @@ adae <- ae %>%
     dtc = AEENDTC
   ) %>%
   derive_vars_dt(
+    new_vars_prefix = "AEST",
+    dtc = AESTDTC
+  ) %>%
+  derive_vars_dt(
     new_vars_prefix = "AST",
     dtc = AESTDTC,
     flag_imputation = "date",
@@ -50,7 +54,7 @@ adae <- ae %>%
   ) %>%
   rowwise() %>%
   mutate(
-    ADURN = as.numeric(difftime(AENDT,ASTDT, units = "days")) + 1
+    ADURN = as.numeric(difftime(AENDT,AESTDT, units = "days")) + 1
   ) %>%
   ungroup() %>%
   mutate(ADURU = if_else(!is.na(ADURN),"DAY", NA_character_)) %>%
