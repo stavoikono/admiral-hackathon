@@ -33,7 +33,7 @@ adlbc <- lb %>%
     A1HI = LBSTNRHI,
     A1LO = LBSTNRLO,
     ADY = LBDY,
-    ANL01FL = LBSTNRHI,
+    #ANL01FL = as.character(LBSTNRHI),
     AVAL = LBSTRESN
   ) %>%
   mutate(
@@ -63,10 +63,17 @@ adlbc <- lb %>%
       VISIT == "SCREENING 1" ~ "0",
       str_detect(VISIT, "WEEK") ~ str_trim(str_replace(VISIT, "WEEK", ""))
     ))
+  ) %>%
+  mutate(
+    ANL01FL = case_when(
+      str_detect(VISIT, "SCREEN|UNSCHED|RETRIEVAL|AMBUL") ~ NA_character_,
+      !is.na(VISIT) ~ "Y",
+      TRUE ~ NA_character_
+    )
   )
 
 adlbc <- adlbc %>%
-  left_join(adlbc %>% count(LBTESTCD) %>% mutate(PARAMN = 1:18) %>% select(-n)) %>%
+  #left_join(adlbc %>% count(LBTESTCD) %>% mutate(PARAMN = 1:18) %>% select(-n)) %>%
   mutate(PARAMCD = LBTESTCD,
          PARAM = paste0(LBTEST," (",LBSTRESU,")"),
          PARAMN =  case_when(PARAMCD=="SODIUM" ~ 18,
@@ -119,7 +126,8 @@ adlbc <- adlbc %>%
   rowwise() %>%
   mutate(ALBTRVAL = max((LBSTRESN-0.5*LBSTNRLO),(1.5*LBSTNRHI-LBSTRESN),na.rm = T)) %>%
   ungroup() %>%
-  derive_var_chg()
+  mutate(CHG = case_when(AVISIT=="Baseline"~ NA_real_,
+                         TRUE ~ AVAL - BASE))
 
 adlbc <- adlbc %>% distinct()
 
