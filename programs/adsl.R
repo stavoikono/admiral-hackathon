@@ -12,6 +12,7 @@ ipak(packages)
 
 
 # Loading SDTM ----
+
 dm <- read_xpt("sdtm/dm.xpt") %>% convert_blanks_to_na()
 ex <- read_xpt("sdtm/ex.xpt") %>% convert_blanks_to_na()
 vs <- read_xpt("sdtm/vs.xpt") %>% convert_blanks_to_na()
@@ -153,10 +154,7 @@ adsl <- adsl %>%
 
 rm(vs_comp)
 
-
-
-
-
+## Derive DS and MH variables ----
 
 adsl <- adsl %>%
   derive_vars_merged(
@@ -174,14 +172,19 @@ adsl <- adsl %>%
     reason_var = DSDECOD,
     filter_ds = DSCAT == "DISPOSITION EVENT"
   ) %>%
+  derive_vars_disposition_reason(
+    dataset_ds = ds,
+    new_var = DCTERM,
+    reason_var = DSTERM,
+    filter_ds = DSCAT == "DISPOSITION EVENT"
+  ) %>%
   mutate(
     DCSREAS = str_to_title(DCSREAS),
     DCSREAS = case_when(DCSREAS=="Lost To Follow-Up" ~ "Lost to Follow-up",
                         DCSREAS=="Lack Of Efficacy" ~ "Lack of Efficacy",
                         DCSREAS=="Study Terminated By Sponsor" ~ "Sponsor Decision",
                         DCSREAS=="Withdrawal By Subject" ~ "Withdrew Consent",
-                        #DCSREAS=="Protocol Violation" ~ "I/E Not Met",
-                        #DCSREAS=="I/E Not Met" ~ "Protocol Violation",
+                        DCTERM=="PROTOCOL ENTRY CRITERIA NOT MET" ~ "I/E Not Met",
                         TRUE ~ DCSREAS)) %>%
   derive_var_disposition_status(
     dataset_ds = ds,
@@ -294,7 +297,7 @@ adsl <- adsl %>%
 
 rm(efffl)
 
-## Deriving CUMDOSE
+## Deriving CUMDOSE ----
 
 df_cumdose <- adsl %>%
   derive_vars_merged(
@@ -340,9 +343,6 @@ adsl <- adsl %>%
 
 rm(df_cumdose)
 
-adsl <- adsl %>%
-  mutate(DCSREAS=ifelse(
-    USUBJID %in% c("01-703-1175","01-705-1382","01-708-1372"),"I/E Not Met",DCSREAS))
 
 # Formatting ADSL for extraction ----
 
