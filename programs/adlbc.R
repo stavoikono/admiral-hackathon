@@ -52,6 +52,7 @@ adlbc <- lb %>%
     R2A1HI = AVAL/A1HI,
     R2A1LO = AVAL/A1LO
   ) %>%
+  filter(!VISIT %in% c("AMBUL ECG REMOVAL","RETRIEVAL")) %>%
   mutate(
     AVISIT = case_when(
       str_detect(VISIT, "SCREEN") ~ "Baseline",
@@ -99,19 +100,21 @@ adlbc <- adlbc %>%
     by_vars = vars(STUDYID, USUBJID, PARAMCD),
     order = vars(AVISITN),
     mode = "last",
-    filter = !is.na(AVISIT) & AVISITN<26,
+    filter = !is.na(AVISIT) & AVISITN>=2 & AVISITN<=24,
     set_values_to = vars(
       AVISIT = "End of Treatment",
       AVISITN = 99
     )
   ) %>%
-  mutate(AENTMTFL = "Y",
-         ANRIND = case_when(LBNRIND=="ABNORMAL" ~ "A",
-                            LBNRIND=="NORMAL" ~ "N",
-                            LBNRIND=="LOW" ~ "L",
-                            LBNRIND=="HIGH" ~ "H",
-                            TRUE ~ NA_character_)
-  )
+  #mutate(AENTMTFL = "Y") %>%
+  rowwise() %>%
+  mutate(ANRIND = case_when(AVAL > 1.5 * A1HI ~ "H",
+                            AVAL < 0.5 * A1LO ~ "L",
+                            AVAL < 1.5 * A1HI & AVAL > 0.5 * A1LO ~ "N",
+                            is.na(AVAL) ~ "N",
+                            TRUE ~ "N")
+  ) %>%
+  ungroup()
 
 base_meas <- adlbc %>%
   group_by(USUBJID,PARAMCD) %>%
@@ -119,7 +122,8 @@ base_meas <- adlbc %>%
             BR2A1LO = R2A1LO[VISITNUM==1],
             BASE = AVAL[VISITNUM==1],
             BNRIND = ANRIND[VISITNUM==1]) %>%
-  ungroup()
+  ungroup() %>%
+  distinct()
 
 adlbc <- adlbc %>%
   left_join(base_meas) %>%
@@ -129,7 +133,17 @@ adlbc <- adlbc %>%
   mutate(CHG = case_when(AVISIT=="Baseline"~ NA_real_,
                          TRUE ~ AVAL - BASE))
 
-adlbc <- adlbc %>% distinct()
+## AENTMTFL flag ----
+aentmtfl <- adlbc %>%
+  filter(VISITNUM>1 & VISITNUM<=12 & !is.na(AVISITN)) %>%
+  group_by(USUBJID, PARAMCD) %>%
+  summarise(VISITNUM = max(VISITNUM, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(AENTMTFL = case_when(VISITNUM<=12 ~ "Y",
+                              TRUE ~ NA_character_))
+
+adlbc <- adlbc %>%
+  left_join(aentmtfl)
 
 # Formatting ADAE for extraction ----
 
