@@ -10,7 +10,7 @@ packages <- c("haven","admiral","dplyr","tidyr","metacore","metatools","xportr",
 
 ipak(packages)
 
-# Loading ADSL & VS ----
+# Loading ADSL & LB ----
 
 adsl <- read_xpt("adam/adsl.xpt") %>% convert_blanks_to_na()
 lb <- read_xpt("sdtm/lb.xpt") %>% convert_blanks_to_na()
@@ -18,6 +18,7 @@ lb <- read_xpt("sdtm/lb.xpt") %>% convert_blanks_to_na()
 adsl_vars <- vars(AGE,AGEGR1, AGEGR1N,COMP24FL,DSRAEFL,RACE,SAFFL,SEX,STUDYID,
                   USUBJID, SUBJID,TRTSDT, TRTEDT, TRT01A, TRT01P, TRT01AN, TRT01PN)
 
+# Deriving ADLBH ----
 
 adlbh <- lb %>%
   filter(LBCAT == "HEMATOLOGY") %>%
@@ -34,7 +35,6 @@ adlbh <- lb %>%
     A1HI = LBSTNRHI,
     A1LO = if_else(LBSTNRLO==0,NA_real_,LBSTNRLO),
     ADY = LBDY,
-    ANL01FL = LBSTNRHI,
     AVAL = LBSTRESN
   ) %>%
   mutate(
@@ -53,6 +53,7 @@ adlbh <- lb %>%
     R2A1HI = AVAL/A1HI,
     R2A1LO = AVAL/A1LO
   ) %>%
+  filter(!VISIT %in% c("AMBUL ECG REMOVAL","RETRIEVAL","BASELINE")) %>%
   mutate(
     AVISIT = case_when(
       str_detect(VISIT, "SCREEN") ~ "Baseline",
@@ -64,50 +65,54 @@ adlbh <- lb %>%
       VISIT == "SCREENING 1" ~ "0",
       str_detect(VISIT, "WEEK") ~ str_trim(str_replace(VISIT, "WEEK", ""))
     ))
-  )
-
-adlbh <- adlbh %>%
-  mutate(PARAMCD = LBTESTCD,
-         PARAM = case_when(
+  ) %>%
+  mutate(
+    PARAMCD = LBTESTCD,
+    PARAM = case_when(
            LBTEST %in% c("Anisocytes","Hematocrit","Macrocytes","Microcytes",
                          "Poikilocytes","Polychromasia") ~ LBTEST,
            TRUE ~ paste0(LBTEST," (",LBSTRESU,")")),
-         PARAMN = case_when(PARAMCD=="HGB" ~ 1,
-                            PARAMCD=="HCT" ~ 2,
-                            PARAMCD=="MCV" ~ 3,
-                            PARAMCD=="MCH" ~ 4,
-                            PARAMCD=="MCHC" ~ 5,
-                            PARAMCD=="WBC" ~ 6,
-                            PARAMCD=="LYM" ~ 7,
-                            PARAMCD=="MONO" ~ 8,
-                            PARAMCD=="EOS" ~ 9,
-                            PARAMCD=="BASO" ~ 10,
-                            PARAMCD=="PLAT" ~ 11,
-                            PARAMCD=="RBC" ~ 12,
-                            PARAMCD=="ANISO" ~ 13,
-                            PARAMCD=="MACROCY" ~ 14,
-                            PARAMCD=="MICROCY" ~ 15,
-                            PARAMCD=="POIKILO" ~ 16,
-                            PARAMCD=="POLYCHR" ~ 17)
-       ) %>%
+    PARAMN = case_when(
+      PARAMCD=="HGB" ~ 1,
+      PARAMCD=="HCT" ~ 2,
+      PARAMCD=="MCV" ~ 3,
+      PARAMCD=="MCH" ~ 4,
+      PARAMCD=="MCHC" ~ 5,
+      PARAMCD=="WBC" ~ 6,
+      PARAMCD=="LYM" ~ 7,
+      PARAMCD=="MONO" ~ 8,
+      PARAMCD=="EOS" ~ 9,
+      PARAMCD=="BASO" ~ 10,
+      PARAMCD=="PLAT" ~ 11,
+      PARAMCD=="RBC" ~ 12,
+      PARAMCD=="ANISO" ~ 13,
+      PARAMCD=="MACROCY" ~ 14,
+      PARAMCD=="MICROCY" ~ 15,
+      PARAMCD=="POIKILO" ~ 16,
+      PARAMCD=="POLYCHR" ~ 17)
+  ) %>%
   derive_extreme_records(
     by_vars = vars(STUDYID, USUBJID, PARAMCD),
     order = vars(AVISITN),
     mode = "last",
-    filter = !is.na(AVISIT) & AVISITN<26,
+    filter = !is.na(AVISIT) & AVISITN>=2 & AVISITN<26,
     set_values_to = vars(
       AVISIT = "End of Treatment",
       AVISITN = 99
     )
   ) %>%
-  mutate(AENTMTFL = "Y",
-         ANRIND = case_when(LBNRIND=="ABNORMAL" ~ "A",
-                            LBNRIND=="NORMAL" ~ "N",
-                            LBNRIND=="LOW" ~ "L",
-                            LBNRIND=="HIGH" ~ "H",
-                            TRUE ~ NA_character_)
-  )
+  rowwise() %>%
+  mutate(
+    ANRIND = case_when(AVAL > 1.5 * A1HI ~ "H",
+                       AVAL < 0.5 * A1LO ~ "L",
+                       AVAL < 1.5 * A1HI & AVAL > 0.5 * A1LO ~ "N",
+                       is.na(AVAL) ~ "N",
+                       is.na(A1HI) & is.na(A1LO) & LBNRIND=="ABNORMAL" ~ "H",
+                       TRUE ~ "N")
+  ) %>%
+  ungroup()
 
+## Derive baseline measurements ----
 
 base_meas <- adlbh %>%
   group_by(USUBJID,PARAMCD) %>%
@@ -115,20 +120,70 @@ base_meas <- adlbh %>%
             BR2A1LO = R2A1LO[VISITNUM==1],
             BASE = AVAL[VISITNUM==1],
             BNRIND = ANRIND[VISITNUM==1]) %>%
-  ungroup()
+  ungroup() %>%
+  distinct()
 
 adlbh <- adlbh %>%
   left_join(base_meas) %>%
   rowwise() %>%
-  mutate(ALBTRVAL = max((LBSTRESN-0.5*LBSTNRLO),(1.5*LBSTNRHI-LBSTRESN),na.rm = T)) %>%
+  mutate(
+    ALBTRVAL = max((LBSTRESN-0.5*LBSTNRLO),(1.5*LBSTNRHI-LBSTRESN),na.rm = T)
+  ) %>%
   ungroup() %>%
-  mutate(CHG = case_when(AVISIT=="Baseline"~ NA_real_,
-                         TRUE ~ AVAL - BASE))
+  mutate(
+    CHG = case_when(AVISIT=="Baseline"~ NA_real_,
+                    TRUE ~ AVAL - BASE)
+  )
 
-adlbh <- adlbh %>% distinct()
+
+## AENTMTFL flag ----
+
+aentmtfl <- adlbh %>%
+  filter(VISITNUM>1 & VISITNUM<=12 & !is.na(AVISITN)) %>%
+  group_by(USUBJID, PARAMCD) %>%
+  summarise(
+    VISITNUM = max(VISITNUM, na.rm = T)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    AENTMTFL = case_when(VISITNUM<=12 ~ "Y",
+                         TRUE ~ NA_character_)
+  )
+
+adlbh <- adlbh %>%
+  left_join(aentmtfl)
+
+## ANL01FL flag ----
+
+anl01fl <- adlbh %>%
+  filter(VISITNUM>1 & VISITNUM <=12 & !is.na(AVISITN)) %>%
+  group_by(USUBJID, PARAMCD) %>%
+  mutate(
+    ALBTRVALMAX = max(ALBTRVAL, na.rm = T)
+  ) %>%
+  ungroup() %>%
+  select(USUBJID,PARAMCD,LBSEQ,ALBTRVAL,ALBTRVALMAX) %>%
+  filter(is.finite(ALBTRVALMAX)) %>%
+  restrict_derivation(
+    derivation = derive_var_extreme_flag,
+    args = params(
+      by_vars = vars(USUBJID,PARAMCD),
+      order = vars(LBSEQ),
+      new_var = ANL01FL,
+      mode = "first"
+    ),
+    filter = ALBTRVAL == ALBTRVALMAX
+  ) %>%
+  filter(!is.na(ANL01FL)) %>%
+  distinct(USUBJID,PARAMCD,LBSEQ,ANL01FL)
+
+adlbh <- adlbh %>%
+  left_join(anl01fl)
 
 
-# Formatting ADAE for extraction ----
+
+
+# Formatting ADLBH for extraction ----
 
 adlbh_spec <- readxl::read_xlsx("metadata/specs.xlsx", sheet = "Variables")  %>%
   filter(Dataset=="ADLBH") %>%

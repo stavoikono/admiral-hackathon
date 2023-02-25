@@ -20,6 +20,8 @@ qs <- read_xpt("sdtm/qs.xpt") %>% convert_blanks_to_na()
 adsl_vars <- vars(STUDYID, USUBJID, SITEID,SITEGR1, AGE,AGEGR1, AGEGR1N,RACE,ITTFL,EFFFL,
                   COMP24FL, SEX, TRTSDT, TRTEDT, TRT01P, TRT01PN )
 
+# Deriving ADADAS variables
+
 adadas <- qs %>%
   filter(QSCAT=="ALZHEIMER'S DISEASE ASSESSMENT SCALE") %>%
   filter((VISITNUM==3 & QSDY<=1 ) |
@@ -62,6 +64,11 @@ adadas <- qs %>%
     new_vars_prefix = "A",
     dtc = QSDTC
   ) %>%
+  # derive_locf_records(
+  #   dataset_expected_obs = ACTOT_expected_obsv,
+  #   by_vars = vars(USUBJID,PARAMCD),
+  #   order = vars(AVISITN,AVISIT)
+  # ) %>%
   rowwise() %>%
   mutate(ADY = case_when(ADT >= TRTSDT ~ as.numeric(difftime(ADT,TRTSDT,"days"))+1,
                          ADT < TRTSDT ~ as.numeric(difftime(TRTSDT,ADT,"days")),
@@ -104,7 +111,6 @@ adadas <- qs %>%
   ungroup() %>%
   mutate(DTYPE = NA_character_,
          ANL01FL = "Y")
-
 
 # Formatting ADADAS for extraction ----
 
