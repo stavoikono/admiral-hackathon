@@ -15,8 +15,6 @@ LaTeX: pdfLaTeX
 AutoAppendNewline: Yes
 StripTrailingWhitespace: Yes
 LineEndingConversion: Posix
-
-UseNativePipeOperator: No
 DisableExecuteRprofile: Yes
 
 SpellingDictionary: en_US
